@@ -9,9 +9,9 @@ using namespace std;
 int NUM_BLOCKS;
 int tot_num_bins;
 
-// These aren't static, but they need to be globa.///
+// These aren't static, but they need to be global...
 int* bins;
-int *part_links;
+int* part_links;
 
 
 // Apply the force from neighbor to particle
@@ -76,11 +76,7 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
         part_links[i] = -1;
     }
 
-
-
-}
-
-void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
+    // I think we need to assign cells / bins to processors here? 
 
     // assign particles to bins
     for (int i = 0; i < num_parts; ++i) {
@@ -95,6 +91,12 @@ void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, 
 
         parts[i].ax = parts[i].ay = 0;
     }
+
+}
+
+void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
+
+    
 
     // loop over bins to compute forces, skipping the padding bins
     for (int i = 0; i < NUM_BLOCKS; i++) {
