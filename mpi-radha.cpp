@@ -8,10 +8,8 @@ using namespace std;
 // Put any static global variables here that you will use throughout the simulation.
 int NUM_BLOCKS;
 int tot_num_bins;
+int NUM_PROC_X, NUM_PROC_Y, del_X, del_Y;
 
-// These aren't static, but they need to be global...
-int* bins;
-int* part_links;
 
 
 // Apply the force from neighbor to particle
@@ -61,41 +59,76 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
 	// This function will be called once before the algorithm begins
 	// Do not do any particle simulation here
 
+
+    // The input is a copy of the entire set of the particles.
+    // Each process fetches its local set in this function.
+
     NUM_BLOCKS =  size/cutoff;
     tot_num_bins = (NUM_BLOCKS+2)*(NUM_BLOCKS+2);
-   
-    bins = (int*) malloc(tot_num_bins * sizeof(int)); //  represents the bins (w padding) that holds heads of linked lists
-    part_links = (int*) malloc(num_parts * sizeof(int)); // indexes the particles in the bins in the bins array
 
+    // These variables set up the grid simulation
+    /* 
+    The simulation has NUM_BLOCKS*NUM_BLOCKS cells. These cells are divided into a grid of dimension
+    NUM_PROC_X*NUM_PROC_Y = num_procs. 
+    */
+	
+	NUM_PROC_X = sqrt(num_procs); // number of processor divisions in x
+	NUM_PROC_Y = num_procs / NUM_PROC_X; // number of processor divisions in y
+	del_X = (NUM_BLOCKS / NUM_PROC_X) + 1; // number of bins across each processor division in x
+	del_Y = (NUM_BLOCKS / NUM_PROC_Y) + 1; // number of bins across each processor division in y
+    int bins_per_proc = del_X*del_Y;
+
+	// Now get the grid index for each processor
+	int proc_X = rank % NUM_PROC_X; 
+	int proc_Y = rank / NUM_PROC_X;
+    /* 
+    This means that the processor covers the chunks of bins defined as:
+        bin_x \in [proc_X*del_X, (proc_X + 1)*del_X]
+        bin_y \in [proc_Y*del_Y, (proc_Y + 1)*del_Y]
+    */
+    
+
+    // Create the arrays for particle storage (also defined for each processor)
+    // By creating arrays of size tot_num_bins (as opposed to bins_per_proc), we can use the same index scheme for particles across all processors
+    // (But we might need to revisit this for memory efficiency)
+
+    int* bins = (int*) malloc(tot_num_bins * sizeof(int)); //  represents the bins (w padding) that holds heads of linked lists
+    int* part_links = (int*) malloc(tot_num_bins * sizeof(int)); // indexes the particles in the bins in the bins array
+    // Instantiate the arrays with the correct starting vals
     for (int i = 0; i < tot_num_bins; i++) {
         bins[i] = -1;
     }
-
-    // declare array that will 
     for (int i = 0; i < num_parts; i++) {
         part_links[i] = -1;
     }
 
-    // I think we need to assign cells / bins to processors here? 
-
-    // assign particles to bins
+    // Now each processor goes through all the particles
+    // If the particle is in its bin, then store it
     for (int i = 0; i < num_parts; ++i) {
-        // Get what row and column the particle would be in, with padding
-        int dx = (parts[i].x * NUM_BLOCKS / size) + 1;
-        int dy = (parts[i].y * NUM_BLOCKS / size) + 1;
-        int bin_id = dx + (NUM_BLOCKS+2)*dy;
+    // Get what row and column the particle would be in, with padding
+        int bins_x = (parts[i].x * NUM_BLOCKS / size) + 1;
+        int bins_y = (parts[i].y * NUM_BLOCKS / size) + 1;
+        
+        // Store the particle if it's in the processor's array
+        if (((bins_x/del_X) == proc_X) & ((bins_y/del_Y) == proc_Y)) {
 
-        // eliminated if-statement checks here
-        part_links[i] = bins[bin_id];
-        bins[bin_id] = i;
+            int bin_id = bins_x + (NUM_BLOCKS+2)*bins_y;
+            part_links[i] = bins[bin_id];
+            bins[bin_id] = i;
+            parts[i].ax = parts[i].ay = 0;
 
-        parts[i].ax = parts[i].ay = 0;
+        }
     }
 
+	
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
 
+    // Each process runs simulation for its local using the O(n) serial algorithm.
+    // Redistribute the outgoing particles
+
+    // CURRENT ISSUE: how to get part_links and bins defined in this scope??
     
 
     // loop over bins to compute forces, skipping the padding bins
