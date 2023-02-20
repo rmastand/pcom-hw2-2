@@ -5,11 +5,13 @@
 
 using namespace std;
 
-// Put any static global variables here that you will use throughout the simulation.
+// Static global vars that are the same for all processors
 int NUM_BLOCKS;
 int tot_num_bins;
-int NUM_PROC_X, NUM_PROC_Y, del_X, del_Y;
+int NUM_PROC_X, NUM_PROC_Y, del_X, del_Y, bins_per_proc;
 
+// Static global vars that are different for each processor
+int proc_X, proc_Y;
 
 
 // Apply the force from neighbor to particle
@@ -76,11 +78,11 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
 	NUM_PROC_Y = num_procs / NUM_PROC_X; // number of processor divisions in y
 	del_X = (NUM_BLOCKS / NUM_PROC_X) + 1; // number of bins across each processor division in x
 	del_Y = (NUM_BLOCKS / NUM_PROC_Y) + 1; // number of bins across each processor division in y
-    int bins_per_proc = del_X*del_Y;
+    bins_per_proc = del_X*del_Y;
 
 	// Now get the grid index for each processor
-	int proc_X = rank % NUM_PROC_X; 
-	int proc_Y = rank / NUM_PROC_X;
+	proc_X = rank % NUM_PROC_X; 
+	proc_Y = rank / NUM_PROC_X;
     /* 
     This means that the processor covers the chunks of bins defined as:
         bin_x \in [proc_X*del_X, (proc_X + 1)*del_X]
@@ -120,7 +122,6 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
         }
     }
 
-	
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
@@ -131,31 +132,36 @@ void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, 
     // CURRENT ISSUE: how to get part_links and bins defined in this scope??
     
 
-    // loop over bins to compute forces, skipping the padding bins
-    for (int i = 0; i < NUM_BLOCKS; i++) {
-        for (int j = 0; j < NUM_BLOCKS; j++) {
-            
-            int bin_id_pad = (i+1) + (NUM_BLOCKS+2)*(j+1);
-            int part_1_id = bins[bin_id_pad];
-         
-            while (part_1_id >= 0) {
-                for (int m = -1; m <= 1; m++) {
-                    for (int n = -1; n <=1; n++) {
+    int part_1_id;
+	int part_2_id;
 
-                        int part_2_id = bins[bin_id_pad + n + (NUM_BLOCKS+2)*m];
-                        
-                        while (part_2_id >= 0) {
-                            apply_force(parts[part_1_id], parts[part_2_id]);
-                            part_2_id = part_links[part_2_id];
-                        }
-                    }
-                }
-                part_1_id = part_links[part_1_id];
-            }
-        }
-    }
+    // Loop through the bins relevant to each processor and compute the forces for the particles in the bins
+    for (int loc_bin_X = proc_X*del_X; loc_bin_X < min((proc_X+1)*del_X, NUM_BLOCKS); loc_bin_X++) {
+		for (int loc_bin_Y = proc_Y*del_Y; loc_bin_Y < min((proc_Y+1)*del_Y, NUM_BLOCKS); loc_bin_Y++) {
+
+			int bin_id_pad = (loc_bin_X + 1) + (NUM_BLOCKS+2)*(loc_bin_Y + 1);
+			part_1_id = bins[bin_id_pad];
+
+			while (part_1_id >= 0) {
+                // TODO: What happens if the neighboring bin is outside of the processor's domain?
+				for (int m = -1; m <= 1; m++) {
+					for (int n = -1; n <=1; n++) {
+						part_2_id = bins[bin_id_pad + n + (NUM_BLOCKS+2)*m];
+						while (part_2_id >= 0) {
+							apply_force(parts[part_1_id], parts[part_2_id]);
+							part_2_id = part_links[part_2_id];
+						}
+					}
+				}
+				part_1_id = part_links[part_1_id];
+			}
+		}
+	}
+
+
     
-    // Mmve Particles
+    // Move Particles
+    // CODE BELOW WON'T WORK. We can only to move the particles in the processor's bins
     for (int i = 0; i < num_parts; ++i) {
         move(parts[i], size);
     }
